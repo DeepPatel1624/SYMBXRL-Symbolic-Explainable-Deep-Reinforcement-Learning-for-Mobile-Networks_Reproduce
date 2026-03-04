@@ -39,7 +39,7 @@ class MimoEnv(gym.Env):
         self.H = H
         self.se_max = se_max
         self.num_ue = H.shape[2]
-        self.curr_step = 0
+        self.current_step = 0
         self.total_step = H.shape[0]
         ue_history = np.zeros((H.shape(2),))
         self.obs_sate = []
@@ -68,12 +68,12 @@ class MimoEnv(gym.Env):
             dict: Information about the environment
         """
 
-        self.curr_step = 0
+        self.currunt_step = 0
         self.total_reward = 0
         self.history = {}
         self.jfi = 0
         self.sys_se = 0
-        group_idx = user_group(np.squeeze(self.H[self.curr_step,:,:]))
+        group_idx = user_group(np.squeeze(self.H[self.currunt_step,:,:]))
         self.usrgrp_cntr.append(group_idx)
         self.ue_history = np.zeros((7,))
         initial_state = np.concatenate((np.reshape(self.se_max[self.current_step,:],(1,self.num_ue)),np.reshape(self.ue_history,(1,self.num_ue)),np.reshape(group_idx,(1,-1))),axis = 1)
@@ -151,13 +151,13 @@ class MimoEnv(gym.Env):
         self.sys_se = sys_se
         self.total_reward = self.total_reward + reward
         
-        self.curr_step += 1
+        self.currunt_step += 1
         done_pm = self.total_step - 1
-        done = self.curr_step >= self.total_step
+        done = self.currunt_step >= self.total_step
         truncated = False
 
         #getting group index
-        group_idx = usr_group(np.squeeze(self.H[(self.curr_step),:,:]))
+        group_idx = usr_group(np.squeeze(self.H[(self.currunt_step),:,:]))
         self.usrgrp_cntr.append(group_idx)
 
         #7)8) next state difinaton
@@ -197,14 +197,62 @@ class MimoEnv(gym.Env):
 
         return reward
     
-    def set_state(self, state):
-        pass
 
+    '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+    set_state() -> This is the functionality used for explnability and policy analysis
+
+    Normally RL : reset() -> step() -> step() ....
+
+    But with... set_state()
+        -   env.set_state(state_t)
+        -   env.step(new_action)
+        - This allows testing alternative decisions from a past state.
+
+    '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+    def set_state(self, state):
         """
             Set the environment to a specific state.
             Args:
                 state (numpy.ndarray): State to set the environment to.
         """
+
+        # Current spectral efficiency potential of each user
+        # Extracting the spectral efficiencies form the state 
+        spectral_efficiencies = state[:self.num_ue]
+
+        # tolerance to compare the SEs in se_max
+        tolerence = 1
+
+        row_index = -1
+        for idx,row in enumerate(self.se_max):
+            if np.all(np.isclose(row, spectral_efficiencies, atol = tolerence)):
+                row_index = idx
+                break
+        if row_index == -1:
+            raise ValueError("The provided state does not match any row in se_max")
+        
+        self.current_step = row_index
+        # state = [se | history | groups ]
+        self.ue_history = state[self.num_ue:self.num_ue*2]
+        group_idx = state[self.num_ue*2:]
+
+        if len(self.usrgrp_cntr) > self.current_step:
+            self.usrgrp_cntr[self.current_step] = group_idx
+        else:
+            self.usrgrp_cntr.append(group_idx)
+
+        #initial state defination
+        initial_state = np.concatenate(
+            (np.reshape(self.se_max[self.current_step, :], (1, self.num_ue)),
+             np.reshape(self.ue_history, (1, self.num_ue)),
+             np.reshape(group_idx, (1, -1))),
+            axis=1
+        )
+
+        self.obs_sate.append(initial_state)
+        info = self.getinfo()
+        
+
 
     def getinfo(self):
         """
