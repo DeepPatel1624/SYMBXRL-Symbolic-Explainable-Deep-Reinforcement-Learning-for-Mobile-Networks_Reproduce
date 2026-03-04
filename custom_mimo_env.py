@@ -1,4 +1,4 @@
-# ============ IMPORTS ============
+# ======================== IMPORTS ==================================
 import numpy as np
 import gymnasium as gym
 import random
@@ -18,7 +18,7 @@ from itertools import combinations
 read: https://gymnasium.farama.org/introduction/create_custom_env/
 """
 
-# =================================
+# ==================================================================
 
 
 # ================ OPENAI GYM CLASS DEFINATIONS ================
@@ -101,8 +101,101 @@ class MimoEnv(gym.Env):
         Group 1 → similar channels
         Group 2 → similar channels
         """
+
         return initial_state, info
+    
+    ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+    """
+    [=] Flow of the STEP of agent in the enviroment:
+    Steps:
+        1) Agents picks the scheduling action
+        2) User selected
+        3) Channel matrix extracted (No of antennas x selected Users)
+        4) MIMO transmissiojn simulated
+        5) Spectral efficiency calculated
+        6) Reward computed
+        7) Next state generated
+    """
+    ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+    def step(self, action):
+
+        """
+        Defination of agent step in environment
+
+        Args: 
+            action taken by the agent
+        Returns:
+            numpy.ndarray => latest observation state (Next)
+            float => reward of the action
+            bool => episode termination 
+            dict => Information about the environment
+        """
         
+        # 1) Agent is picking the action
+        # 2) user selection
+        ue_select , idx = sel_ue(action)
+
+        #3) Channel matrix extracted (No of antennas x selected Users)
+        #4) MIMO transmissiojn simulated
+
+        #Modulation selection: Sane for all (log2(4)) 
+        mod_select = np.ones((idx,)) * 4
+        #antennas x selected users will be H 
+        ur_se_total, ur_min_snr, ur_se = data_process(np.reshape(self.H[self.current_step,:,ue_select],(64,-1)),idx,mod_select)
         
+        #5)6) Ccaluations
+        #reward, history, jfi ,se calculatikons
+        reward, self.ue_history, jfi, sys_se = self.calculate_reward(ur_se_total, ur_min_snr, ur_se, ue_select, idx, self.usrgrp_cntr[self.current_step], self.se_max[self.current_step])
+        self.jfi = jfi 
+        self.sys_se = sys_se
+        self.total_reward = self.total_reward + reward
         
+        self.curr_step += 1
+        done_pm = self.total_step - 1
+        done = self.curr_step >= self.total_step
+        truncated = False
+
+        #getting group index
+        group_idx = usr_group(np.squeeze(self.H[(self.curr_step),:,:]))
+        self.usrgrp_cntr.append(group_idx)
+
+        #7)8) next state difinaton
+        next_state = np.concatenate((np.reshape(self.se_max[(self.current_step),:],(1,self.num_ue)),np.reshape(self.ue_history,(1,self.num_ue)),np.reshape(group_idx,(1,-1))),axis = 1)
+        self.obs_state.append(next_state)       
+
+        info = self.getinfo()
+        history = self.update_history(info)   
+
+
+        return next_state, reward, done, truncated, info
+
+    def get_reward(self, action):
+
+        """
+        This is the reward calculation defination
+
+        Args:
+            action 
+        Returns:
+            float reward
+        """
+        
+        # Saves the current state
+        current_step = self.current_step
+        ue_history = self.ue_history.copy()
+
+        #Reward calculations
+        ue_select, idx = sel_ue(action)
+        mod_select = np.ones((idx,))* 4
+        ur_se_total, ur_min_snr, ur_se = data_process(np.reshape(self.H[current_step, :, ue_select], (64, -1)), idx, mod_select)
+        reward, _, _, _ = self.calculate_reward(ur_se_total, ur_min_snr, ur_se, ue_select, idx, self.usrgrp_cntr[current_step], self.se_max[current_step], se_noise=True)
+        
+        # Restores the state
+        self.current_step = current_step
+        self.ue_history = ue_history
+
+        return reward
+    
+    
         
