@@ -332,6 +332,7 @@ class MimoEnv(gym.Env):
         return reward, self.ue_history, jfi, ur_se_total
 
     
+    # To make the class callabe heer __call__ is used.
     def __call__(self):
         return self
 
