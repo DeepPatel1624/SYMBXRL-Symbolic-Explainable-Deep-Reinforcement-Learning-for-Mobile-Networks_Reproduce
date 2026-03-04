@@ -275,14 +275,60 @@ class MimoEnv(gym.Env):
         
         for key,value in info.items():
             self.history[key].append(value)
-            
 
 
-    def calculate_reward():
-        pass
+    """
+    Reward calculations based on the spectral efficieny
+        Args:
+            ur_se_total (float): Total spectral efficiency.
+            ur_min_snr (float): Minimum signal-to-noise ratio.
+            ur_se (numpy.ndarray): Spectral efficiency for each user.
+            ue_select (int): Selected user index.
+            idx (int): Number of selected users.
+            usrgrp (int): User group index.
+            semax (numpy.ndarray): Maximum achievable spectral efficiency.
+        Returns:
+            float: Calculated reward.
+            numpy.ndarray: Updated user history.
+    """
+    
+    def calculate_reward(self, ur_se_total, ur_min_snr, ur_se, ue_select, idx, usrgrp, semax, se_noise = False):
+        
+        beta = 0.5 
+
+        # Converting Action to Binary Encoding
+        # [1,0,1,0,0,1,1]
+        bin_act = transform_input_to_output(ue_select, 7)
+
+        usrgrp2 = usrgrp + 1
+        sel = usrgrp2 * bin_act
+        
+        non_zero_elements = sel[sel != 0]
+        ue_select = np.array(ue_select)
+
+        sum_semax = np.sum(semax)
+        
+        Norm_Const = 1.15
+        if se_noise:
+            ur_se, ur_se_total = adjust_se_interfernce(non_zero_elements, ur_se, ur_se_total, usrgrp, ue_select)
+        
+        #Reward
+        #Normalizing due to Randomization
+        ur_se_total = ur_se_total / (sum_semax*Norm_Const) 
+        
+        for i in range(0,idx):
+            self.ue_history[ue_select[i]] += ur_se[i]
+
+
+        jfi = np.square((np.sum(self.ue_history))) / (7 * np.sum(np.square(self.ue_history)))
+
+        reward  = round((beta*ur_se_total) + ((1-beta)*jfi), 3)
+
+
+        return reward, self.ue_history, jfi, ur_se_total
 
     
-    def __call(self):
+    def __call__(self):
         return self
 
 
