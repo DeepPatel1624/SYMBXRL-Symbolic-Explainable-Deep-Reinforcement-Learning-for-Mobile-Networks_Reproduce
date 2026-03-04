@@ -300,12 +300,16 @@ class MimoEnv(gym.Env):
         # [1,0,1,0,0,1,1]
         bin_act = transform_input_to_output(ue_select, 7)
 
+        #O BASED TO 1 BASED INDEXNG
         usrgrp2 = usrgrp + 1
+
+        #Getting the selected users with groups
+        # [2,3,1,2,3,4,1] * [1,0,1,0,0,1,1] = [2,0,1,0,0,4,1]
         sel = usrgrp2 * bin_act
-        
         non_zero_elements = sel[sel != 0]
         ue_select = np.array(ue_select)
 
+        # Maximum possibe spectal efficiency
         sum_semax = np.sum(semax)
         
         Norm_Const = 1.15
@@ -319,7 +323,7 @@ class MimoEnv(gym.Env):
         for i in range(0,idx):
             self.ue_history[ue_select[i]] += ur_se[i]
 
-
+        #calculation of jains fairness index
         jfi = np.square((np.sum(self.ue_history))) / (7 * np.sum(np.square(self.ue_history)))
 
         reward  = round((beta*ur_se_total) + ((1-beta)*jfi), 3)
