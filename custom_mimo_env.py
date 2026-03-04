@@ -251,25 +251,31 @@ class MimoEnv(gym.Env):
 
         self.obs_sate.append(initial_state)
         info = self.getinfo()
-        
+
+
 
 
     def getinfo(self):
         """
-            Get information about the environment.
-            Returns:
+          Returns:
                 dict: Information about the environment.
         """
-        pass
+        return dict(current_step = self.current_step , NSSE = self.sys_se , JFI = self.jsi)
 
 
-    def update_history():
+    def update_history(self,info):
         """
             Update the history of the environment.
             Args:
                 info (dict): Information about the environment.
         """
-        pass
+        
+        if not self.history:
+            self.history = {key: [] for key in info.keys()}
+        
+        for key,value in info.items():
+            self.history[key].append(value)
+            
 
 
     def calculate_reward():
