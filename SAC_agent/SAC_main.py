@@ -100,7 +100,7 @@ best_model_path = None
 start_time = time.time()  # Start timer
 print("Training started...")
 
-# Training loop
+# ======================== Trainning ========================
 for i_episode in range(args.max_episode):
 
     observation, info = env.reset()
@@ -153,7 +153,7 @@ print(f"Training time: {hours} hours, {minutes} minutes, {seconds} seconds")
 # agent.save_checkpoint(final_model_path)
 # print("Final model saved successfully.")
 
-#Evaluate the model
+# ======================== Evaluation ========================
 print("###############################################################EVALUATION STARTS ############################################################################################################")
 print("Evaluation started...")
 
