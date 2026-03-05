@@ -159,13 +159,15 @@ print("Evaluation started...")
 
 # Initialize environment
 env = MimoEnv(H_test, se_max_test)
-print('Environment initialized')
+print('[~] Environment initialized')
 
 observation, info = env.reset()
 done = False
 score = 0
+
 # Episode loop
 while not done:
+
     action, final_action = agent.select_action(observation)
     ue_select, idx = sel_ue(final_action[0])
     next_obs, reward, done, _, info = env.step(final_action[0])
