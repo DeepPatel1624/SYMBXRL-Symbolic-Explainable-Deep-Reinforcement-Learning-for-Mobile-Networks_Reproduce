@@ -1,284 +1,673 @@
-'''
-The following code is part of "SymbXRL: Symbolic Explainable Deep Reinforcement Learning for Mobile Networks" 
-Copyright - RESILIENT AI NETWORK LAB, IMDEA NETWORKS
-
-DISCLAIMER: THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
-BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-'''
-
-
-## Imports
+#================ IMPORTS =====================
 
 from Action_Steering.p_square_quantile_approximator import PSquareQuantileApproximator
 import pandas as pd
 import numpy as np
 import ast
 
+
 KPI_CHANGE_THRESHOLD_PERCENT = 5
 
-# Symbolizer that receives one or 2 timestep of data and returns the symbolic representation
+#=============== SYMBOLIZER DEFINATION =========
+"""
+# - Symbolizer that receives one or 2 timestep of data
+# - returns the symbolic representation
+"""
+
 class QuantileManager:
-    '''
-    A class to manage quantile approximations for multiple KPIs using the PSquareQuantileApproximator.
-    '''
-    def __init__(self, kpi_list, p=50):        
-        self.quantile_approximators = {kpi: PSquareQuantileApproximator(p) for kpi in kpi_list}
+    """
+    QuantileManager
+    ----------------
+    This class maintains quantile estimators for multiple KPIs (Key Performance Indicators).
     
+    In SymbXRL, numerical KPI values (e.g., spectral efficiency, fairness, etc.)
+    are converted into symbolic categories such as Q1, Q2, Q3, Q4.
+
+    Instead of storing all historical KPI data to compute quartiles,
+    this class uses the P2 (P-Square) online quantile approximation algorithm.
+
+    Advantages:
+    - Memory efficient
+    - Works in streaming data settings
+    - Updates quantiles incrementally as new data arrives
+    """
+
+    def __init__(self, kpi_list, p=50):
+        """
+        Initialize the quantile manager.
+
+        Parameters
+        ----------
+        kpi_list : list
+            List of KPI names that require quantile estimation.
+            Example: ["MSE", "DTU", "scheduled_user"]
+
+        p : int
+            Target percentile for the quantile approximation.
+            Default = 50 (median). The P² algorithm internally
+            estimates the quartile markers.
+        """
+
+        # Create one quantile approximator per KPI
+        # Dictionary structure:
+        # {
+        #   "MSE": PSquareQuantileApproximator,
+        #   "DTU": PSquareQuantileApproximator,
+        #   ...
+        # }
+        self.quantile_approximators = {
+            kpi: PSquareQuantileApproximator(p) for kpi in kpi_list
+        }
+
     def fit(self):
+        """
+        Initialize all quantile approximators.
+
+        The P2 algorithm requires an initial fitting stage.
+        Here we initialize them with an empty dataset.
+
+        In practice, they will quickly adapt as new values
+        are streamed through `partial_fit`.
+        """
+
         for approximator in self.quantile_approximators.values():
             approximator.fit([])
-    
+
     def partial_fit(self, kpi_name, value):
+        """
+        Update the quantile estimator for a specific KPI.
+
+        This function is called at every timestep to incorporate
+        new observations of KPI values.
+
+        Parameters
+        ----------
+        kpi_name : str
+            Name of the KPI being updated.
+
+        value : list or numpy array
+            New KPI values observed at the current timestep.
+
+        Example
+        -------
+        partial_fit("MSE", [3.2, 2.8, 4.1])
+        """
+
+        # Only update if the KPI exists
         if kpi_name in self.quantile_approximators:
             self.quantile_approximators[kpi_name].partial_fit(value)
-        
+
     def get_markers(self, kpi_name):
+        """
+        Retrieve quantile markers for a specific KPI.
+
+        The P² algorithm maintains 5 markers representing
+        key quantile boundaries:
+
+        markers = [q0, q1, q2, q3, q4]
+
+        where:
+        q0 = minimum
+        q1 = first quartile (25%)
+        q2 = median (50%)
+        q3 = third quartile (75%)
+        q4 = maximum
+
+        Returns
+        -------
+        list
+            List of quantile markers if available.
+            Returns empty list if KPI does not exist.
+        """
+
         if kpi_name in self.quantile_approximators:
             return self.quantile_approximators[kpi_name].get_markers()
         else:
             return []
-        
+
     def reset(self):
+        """
+        Reset all quantile estimators.
+
+        Useful when restarting an experiment or beginning
+        a new dataset.
+
+        NOTE:
+        Current implementation resets markers to
+        [1, 2, 3, 4, 5], which may not be ideal.
+        The TODO comment in the original code suggests
+        improving this initialization.
+        """
+
         for kpi in self.quantile_approximators:
-            self.quantile_approximators[kpi].reset() # TODO: the reset, set's markers to 1, 2, 3, 4, 5 Maybe we should do something about this
-    
+            self.quantile_approximators[kpi].reset()
+
     def represent_markers(self):
         """
-        This function will return a dictionary that keys are q0 to q4
+        Represent the quantile markers for all KPIs
+        as a pandas DataFrame.
+
+        This is mainly used for debugging, visualization,
+        or analysis.
+
+        Output format example
+        ---------------------
+
+        KPI      q0    q1    q2    q3    q4
+        -----------------------------------
+        MSE     0.5   1.2   2.3   3.4   4.8
+        DTU     0.3   0.9   1.8   2.7   3.9
+
+        Returns
+        -------
+        pandas.DataFrame
+            Table of quantile markers for each KPI.
         """
+
         markers_data = []
+
+        # Iterate through each KPI's quantile estimator
         for kpi in self.quantile_approximators:
+
+            # Retrieve marker values
             markers = self.get_markers(kpi)
+
+            # Valid marker list should contain 5 values
             if len(markers) == 5:
+
                 markers_data.append({
                     "kpi": kpi,
-                    "q0": markers[0],
-                    "q1": markers[1],
-                    "q2": markers[2],
-                    "q3": markers[3],
-                    "q4": markers[4],
+                    "q0": markers[0],  # minimum
+                    "q1": markers[1],  # 25th percentile
+                    "q2": markers[2],  # median
+                    "q3": markers[3],  # 75th percentile
+                    "q4": markers[4],  # maximum
                 })
-        
+
+        # Convert list of dictionaries to DataFrame
         return pd.DataFrame(markers_data)
-    
+
+
 class Symbolizer:
+
+    """
+    Symbolizer
+    ----------
+    This class converts raw RL environment data (states + actions)
+    into symbolic predicates used by the SymbXRL explanation layer.
+
+    The symbolic representation describes:
+        - KPI changes (increase / decrease / constant)
+        - Scheduling decisions
+        - Group-level behaviour
+
+    Example symbolic output:
+        inc(MSE, Q3)
+        dec(DTU, Q1)
+        inc(G1, Q2, 50)
+
+    where:
+        inc / dec / const  → change direction
+        Q1..Q4             → KPI quartile
+        G1                 → user group
+        50                 → percent scheduled
+    """
+
     def __init__(self, quantile_manager: QuantileManager, kpi_list, users):
+        """
+        Initialize the Symbolizer.
+
+        Parameters
+        ----------
+        quantile_manager : QuantileManager
+            Object responsible for computing KPI quartiles.
+
+        kpi_list : list
+            List of KPI names (example: ["MSE", "DTU"])
+
+        users : list
+            List of user indices in the system (example: [0..6])
+        """
+
+        # Quantile manager used to categorize KPI values
         self.quantile_manager = quantile_manager
+
+        # List of KPI names
         self.kpis_name_list = kpi_list
+
+        # User IDs in the system
         self.users = users
-        
+
+        # Previous timestep state per group
         self.prev_state_df = {}
+
+        # Previous timestep decisions per group
         self.prev_decision_df = {}
-        
+
+        # Temporary storage for current timestep
         self.prev_state_candid_df = {}
         self.prev_decision_candid_df = {}
-    
+
+
+
     def create_symbolic_form(self, state_t_df, decision_t_df):
         """
-            This function will receive the state and decision of an agent in a timestep and returns the symbolic representation of it
+        Convert a timestep state + decision into symbolic predicates.
+
+        Parameters
+        ----------
+        state_t_df : pandas.DataFrame
+            Environment state at timestep t
+
+        decision_t_df : pandas.DataFrame
+            RL agent action at timestep t
+
+        Returns
+        -------
+        pandas.DataFrame
+            Symbolic representation of effects
         """
+
         effects_symbolic_representation = []
-        
-        ## Scrape groups and each groups memebers from 
+
+        # Extract groups and their members
         groups = self._get_list_of_existing_groups_in_timestep(state_t_df)
-        agent_complete_decision = self._get_actions_full_represetntation(decision_t_df['action'].iloc[0])
-        
+
+        # Convert agent action to full representation
+        agent_complete_decision = self._get_actions_full_represetntation(
+            decision_t_df['action'].iloc[0]
+        )
+
+        # Process each group separately
         for group, group_members in groups.items():
-            ## For Each group check if we have a previous record for that group, if existst then compare with it and create symbolic format if not store it and wait for the next one
+
             members_refined = None
-            kpi_columns = list(np.concatenate([self._get_list_of_kpi_column_for_users(kpi_name, group_members) for kpi_name in self.kpis_name_list]))
-            
+
+            # Build column names for the KPIs belonging to this group
+            kpi_columns = list(np.concatenate([
+                self._get_list_of_kpi_column_for_users(kpi_name, group_members)
+                for kpi_name in self.kpis_name_list
+            ]))
+
+            # If previous state exists → compute symbolic transition
             if group in self.prev_state_df:
-                group_symbolic_effect = self._calculate_kpi_symbolic_state(state_t_df, self.prev_state_df[group], group_members)
-                
-                group_symbolic_decision = self._calculate_decision_symbolic_state(decision_t_df, self.prev_decision_df[group], group, group_members)
-                
-                members_refined = self._clean_member_state_according_to_scheduling(group_members, decision_t_df['action'].iloc[0])
-                
+
+                # Compute symbolic KPI change
+                group_symbolic_effect = self._calculate_kpi_symbolic_state(
+                    state_t_df,
+                    self.prev_state_df[group],
+                    group_members
+                )
+
+                # Compute symbolic scheduling change
+                group_symbolic_decision = self._calculate_decision_symbolic_state(
+                    decision_t_df,
+                    self.prev_decision_df[group],
+                    group,
+                    group_members
+                )
+
+                # Split users into scheduled / unscheduled
+                members_refined = self._clean_member_state_according_to_scheduling(
+                    group_members,
+                    decision_t_df['action'].iloc[0]
+                )
+
+                # Store symbolic record
                 effects_symbolic_representation.append({
                     "timestep": state_t_df['timestep'].iloc[0],
                     "group": group,
                     "group_members": str(group_members),
+
+                    # symbolic KPI predicates
                     **group_symbolic_effect,
+
+                    # scheduled user list
                     "sched_members": str(members_refined),
+
+                    # full action representation
                     "sched_members_complete": str(agent_complete_decision),
+
+                    # symbolic decision predicate
                     "decision": group_symbolic_decision
                 })
+
             else:
-                members_refined = self._clean_member_state_according_to_scheduling(group_members, decision_t_df['action'].iloc[0])
-            
+                # If this group appears for first time
+                members_refined = self._clean_member_state_according_to_scheduling(
+                    group_members,
+                    decision_t_df['action'].iloc[0]
+                )
+
+            # Save decision for next timestep comparison
             decision_to_be_rememeberd = decision_t_df.copy()
-            decision_to_be_rememeberd.at[decision_to_be_rememeberd.index[0], 'action'] = members_refined[0]
-            
+            decision_to_be_rememeberd.at[
+                decision_to_be_rememeberd.index[0],
+                'action'
+            ] = members_refined[0]
+
+            # Store current state for next timestep
             self.prev_state_candid_df[group] = state_t_df[kpi_columns]
+
             self.prev_decision_candid_df[group] = decision_to_be_rememeberd
-            self.quantile_manager.partial_fit('scheduled_user', [len(members_refined[0])])
-            
+
+            # Update quantile estimator for scheduled user count
+            self.quantile_manager.partial_fit(
+                'scheduled_user',
+                [len(members_refined[0])]
+            )
+
+        # Update KPI quartile estimators
         self._add_timestep_kpi_data_to_approximator(state_t_df)
+
         return pd.DataFrame(effects_symbolic_representation)
-    
+
+
+
     def step(self):
         """
-        This function will step to the next timestep and update the previous state and decision
+        Move the symbolizer to next timestep.
+
+        Copies candidate state/decision to previous state/decision.
         """
+
         self.prev_state_df = self.prev_state_candid_df.copy()
         self.prev_decision_df = self.prev_decision_candid_df.copy()
-    
+
+
+
     def _clean_member_state_according_to_scheduling(self, members_list, decision):
         """
-        This function receives a list of members and returns a list of 2 lists, the first element contains the shceduled users and the second element contains the list of unscheduled users
+        Separate scheduled and unscheduled users.
+
+        Returns
+        -------
+        [scheduled_users, unscheduled_users]
         """
-        decision = set(ast.literal_eval(decision) if not isinstance(decision, tuple) else decision)
-        scheduled_members = [member for member in members_list if member in decision]
-        unscheduled_members = [member for member in members_list if member not in decision]
+
+        decision = set(ast.literal_eval(decision)
+                       if not isinstance(decision, tuple)
+                       else decision)
+
+        scheduled_members = [
+            member for member in members_list if member in decision
+        ]
+
+        unscheduled_members = [
+            member for member in members_list if member not in decision
+        ]
+
         return [scheduled_members, unscheduled_members]
-    
-    def _calculate_decision_symbolic_state(self, current_decision_df, previous_decision, group_num, group_users):
-        """Calculate the symbolic state for a decision based on current and previous decision values."""
-        # inc(G0, Quartile, Percent)
-        
-        current_decision = self._clean_member_state_according_to_scheduling(group_users, current_decision_df['action'].iloc[0])
-        previous_decision = ast.literal_eval(previous_decision['action'].iloc[0]) if not isinstance(previous_decision['action'].iloc[0], list) else previous_decision['action'].iloc[0]
-        
+
+
+
+    def _calculate_decision_symbolic_state(
+            self,
+            current_decision_df,
+            previous_decision,
+            group_num,
+            group_users
+    ):
+        """
+        Convert scheduling decision change into symbolic predicate.
+
+        Example output:
+            inc(G1, Q2, 50)
+        """
+
+        current_decision = self._clean_member_state_according_to_scheduling(
+            group_users,
+            current_decision_df['action'].iloc[0]
+        )
+
+        previous_decision = ast.literal_eval(
+            previous_decision['action'].iloc[0]
+        ) if not isinstance(previous_decision['action'].iloc[0], list) \
+            else previous_decision['action'].iloc[0]
+
         scheduled_users_count = len(current_decision[0])
-        total_users_count = len(current_decision[0]) + len(current_decision[1])
-        
-        ## Set predicate
+
+        total_users_count = (
+                len(current_decision[0]) +
+                len(current_decision[1])
+        )
+
+        # Determine predicate direction
         predicate = "const"
-        ## Compare the number of schedueld user with previous one and set direction
+
         if scheduled_users_count > len(previous_decision):
             predicate = "inc"
         elif scheduled_users_count < len(previous_decision):
-            predicate = 'dec'
+            predicate = "dec"
 
-        ## Set Group Name
+        # Group name
         group_name = f"G{group_num}"
-        
-        ## Set Quartile of Scheduled User number
-        quartile = self._get_kpi_quantile("scheduled_user", scheduled_users_count)
-        
-        ## Set the percentage of scheduled users from the group
-        # scheduled_percentage = round((scheduled_users_count / total_users_count) * 100 / 10) * 10
-        scheduled_percentage = round((scheduled_users_count / total_users_count) * 100 / 25) * 25
-        
-        return f"{predicate}({group_name}, {quartile}, {scheduled_percentage})" 
-    
-    def _calculate_kpi_symbolic_state(self, curr_state_df:pd.DataFrame, prev_state_df:pd.DataFrame, members:list):
+
+        # Quartile category
+        quartile = self._get_kpi_quantile(
+            "scheduled_user",
+            scheduled_users_count
+        )
+
+        # Percent of users scheduled
+        scheduled_percentage = round(
+            (scheduled_users_count / total_users_count) * 100 / 25
+        ) * 25
+
+        return f"{predicate}({group_name}, {quartile}, {scheduled_percentage})"
+
+
+
+    def _calculate_kpi_symbolic_state(self,
+                                      curr_state_df,
+                                      prev_state_df,
+                                      members):
         """
-        Calculate the symbolic state for a KPI slice based on current and previous KPI values.
-        """           
+        Generate symbolic predicates for KPI changes.
+
+        Example output:
+
+            inc(MSE, Q3)
+            dec(DTU, Q1)
+        """
+
         kpi_symbolic_representatino = {}
-        
+
         for kpi_group in self.kpis_name_list:
-            # calculate the symbolic form of mean of the kpis
-            curr_mean = round(curr_state_df[self._get_list_of_kpi_column_for_users(kpi_group, members)].iloc[0].mean(), 4)
-            prev_mean = round(prev_state_df.filter(regex=f"^{kpi_group}").iloc[0].mean(), 4)
-            
-            kpi_symbolic_representatino[f'{kpi_group}'] = self._define_MSE_or_DTU_symbolic_state(curr_mean, prev_mean, f'{kpi_group}', kpi_group)
-            # kpi_symbolic_representatino[f'{kpi_group}_mean'] = self._define_MSE_or_DTU_symbolic_state(curr_mean, prev_mean, f'{kpi_group}_mean', kpi_group)
-            # display(kpi_symbolic_representatino)
-            # detail = []
-            # for member in members:
-            #     detail.append(self._define_MSE_or_DTU_symbolic_state(curr_kpi[f'{kpi_group}{member}'].iloc[0], prev_kpi[f'{kpi_group}{member}'].iloc[0], f'{kpi_group}{member}', kpi_group))
-            # kpi_symbolic_representatino[f'{kpi_group}_detail'] = detail
+
+            curr_mean = round(
+                curr_state_df[
+                    self._get_list_of_kpi_column_for_users(
+                        kpi_group,
+                        members
+                    )
+                ].iloc[0].mean(),
+                4
+            )
+
+            prev_mean = round(
+                prev_state_df.filter(regex=f"^{kpi_group}")
+                .iloc[0].mean(),
+                4
+            )
+
+            kpi_symbolic_representatino[f'{kpi_group}'] = \
+                self._define_MSE_or_DTU_symbolic_state(
+                    curr_mean,
+                    prev_mean,
+                    f'{kpi_group}',
+                    kpi_group
+                )
+
         return kpi_symbolic_representatino
-    
-    def _define_MSE_or_DTU_symbolic_state(self, curr_value, prev_value, kpi_column, kpi_name):
+
+
+
+    def _define_MSE_or_DTU_symbolic_state(
+            self,
+            curr_value,
+            prev_value,
+            kpi_column,
+            kpi_name
+    ):
         """
-            This function will calculate and returns the symbolic representation of the MSE column for different users
+        Convert KPI numeric change into symbolic predicate.
         """
-        change_percentage = self._find_change_percentage(curr_value, prev_value)
+
+        change_percentage = self._find_change_percentage(
+            curr_value,
+            prev_value
+        )
+
         predicate = self._get_predicate(change_percentage)
+
         return f'{predicate}({kpi_column}, {self._get_kpi_quantile(kpi_name, curr_value)})'
-    
+
+
+
     def _find_change_percentage(self, curr_value, prev_value):
-        """ This function will calculate the change percentage of the given parameter """
+        """
+        Compute percentage change between timesteps.
+        """
+
         if prev_value == 0:
+
             if curr_value == 0:
                 return 0
+
             else:
                 return 'inf'
+
         else:
-            return int(100 * (curr_value - prev_value) / prev_value)
-    
+
+            return int(
+                100 * (curr_value - prev_value) / prev_value
+            )
+
+
+
     def _get_predicate(self, change_percentage):
-        """ This function will return the correct predicate according to the change percentage """
+        """
+        Convert percentage change into predicate.
+        """
+
         if change_percentage == 'inf':
             return "inc"
+
         elif change_percentage > KPI_CHANGE_THRESHOLD_PERCENT:
             return "inc"
+
         elif change_percentage < -KPI_CHANGE_THRESHOLD_PERCENT:
             return "dec"
+
         else:
             return "const"
 
+
+
     def _get_kpi_quantile(self, kpi_name, kpi_value):
         """
-        This function will return the quarter or if the value is min/max of the observed data
+        Map KPI value to quartile category.
         """
+
         markers = self.quantile_manager.get_markers(kpi_name)
-        
+
         if len(markers) < 5:
             return "NaN"
-        # Check for values at or below the minimum marker or at or above the maximum marker
+
         if kpi_value <= markers[1]:
             return "Q1"
+
         elif kpi_value <= markers[2]:
             return "Q2"
+
         elif kpi_value <= markers[3]:
             return "Q3"
-        elif kpi_value <= 0.999*markers[4]:
+
+        elif kpi_value <= 0.999 * markers[4]:
             return "Q4"
+
         else:
             return "MAX"
-    
+
+
+
     def _add_timestep_kpi_data_to_approximator(self, timestep_df):
-        """Adds KPI data of one timestep to the quantile approximators."""
+        """
+        Feed KPI values into quantile estimators.
+        """
+
         for kpi_name in self.kpis_name_list:
-            # Create list of df columns according to the kpi_name
-            kpi_columns = self._get_list_of_kpi_column_for_users(kpi_name, self.users)
-            
-            # send list of new values to the quartile manager to handle
-            self.quantile_manager.partial_fit(kpi_name, timestep_df[kpi_columns].iloc[0].to_numpy())
-    
+
+            kpi_columns = self._get_list_of_kpi_column_for_users(
+                kpi_name,
+                self.users
+            )
+
+            self.quantile_manager.partial_fit(
+                kpi_name,
+                timestep_df[kpi_columns].iloc[0].to_numpy()
+            )
+
+
+
     def _get_list_of_kpi_column_for_users(self, kpi_name, user_list):
         """
-        This function will combine the kpi name and user list given. The output is used to fetch columns from the receied state dataframe
+        Generate KPI column names for given users.
+
+        Example:
+            kpi_name = "MSE"
+            users = [0,1,2]
+
+        Returns:
+            ["MSE0","MSE1","MSE2"]
         """
+
         return [f'{kpi_name}{user}' for user in user_list]
-    
+
+
+
     def _get_list_of_existing_groups_in_timestep(self, data):
-        """"
-        This function will receive a timestep of data and returns a dictionary that the keys are group number and the elements are the list of users in that group
         """
-        # Find group numbers
+        Extract group membership of users.
+
+        Returns
+        -------
+        dict
+
+        Example:
+
+            {0:[1,3], 1:[0,2,4]}
+        """
+
         groups = {}
-        # Iterate over each 'UGUr' column to determine the group for each user
-        for i in self.users:  # Assuming there are 7 UGUr columns (0 to 6)
+
+        for i in self.users:
+
             group_number = int(data[f'UGUr{i}'].iloc[0])
-            
-            # Add the user number (i) to the corresponding group number key in the dictionary
+
             if group_number in groups:
                 groups[group_number].append(i)
+
             else:
                 groups[group_number] = [i]
+
         return groups
-    
+
+
+
     def _get_actions_full_represetntation(self, agent_action_tuple):
         """
-        This function will receive the action and return the full representation of the action
+        Convert scheduled users into
+        [scheduled, unscheduled]
         """
-        # Convert the input tuple to a list
+
         members = list(agent_action_tuple)
-        
-        # Create a full set of numbers from 0 to 6
+
         full_set = set(range(7))
-        
-        # Convert the input tuple to a set
+
         input_set = set(agent_action_tuple)
-        
-        # Find the missing numbers by subtracting the input set from the full set
+
         missing_numbers = list(full_set - input_set)
-        
-        # Return the result as a list of two lists
+
         return [members, missing_numbers]
