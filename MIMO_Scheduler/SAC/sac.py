@@ -52,7 +52,11 @@ class SAC(object):
         self.target_update_interval = args.target_update_interval  # Interval for updating target network
         self.automatic_entropy_tuning = args.automatic_entropy_tuning  # Flag for automatic entropy tuning
 
-        self.device = torch.device("cuda:0" if args.cuda else "cpu")  # Device configuration
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() 
+            else "mps" if torch.backends.mps.is_available() 
+            else "cpu"
+        ) # Device configuration
 
         # Initialize critic networks
         if len(self.gpu_ids) == 1:

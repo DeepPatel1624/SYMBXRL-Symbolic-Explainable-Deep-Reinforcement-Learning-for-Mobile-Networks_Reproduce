@@ -7,7 +7,8 @@ project_root = os.path.abspath(os.path.join(script_dir, '..', '..'))
 sys.path.insert(0, project_root)
 
 
-from constants import PROJ_ADDR
+# from constants import PROJ_ADDR
+PROJ_ADDR = PROJ_ADDR = '/Users/deep/Desktop/MICxN/Projects/SYMBXRL-Symbolic-Explainable-Deep-Reinforcement-Learning-for-Mobile-Networks_Reproduce/MIMO_Scheduler'
 import numpy as np
 import gymnasium as gym
 import h5py
@@ -34,12 +35,12 @@ sys.path.insert(0, parent_dir)
 from custom_mimo_env import MimoEnv
 
 # ======================= Selecting the device ======================
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 print(f"Device: {device}")
 
 
 # ==================== Data Loading + Processing ====================
-H_file = h5py.File(f'{PROJ_ADDR}/A2-MIMOResourceScheduler/Datasets/LOS_highspeed2_64_7.hdf5','r')
+H_file = h5py.File(f'{PROJ_ADDR}/Datasets/LOS_highspeed2_64_7.hdf5','r')
 H = np.array(H_file.get('H'))
 se_max_ur = np.array(H_file.get('se_max'))
 print('Data loaded successfully')
@@ -177,6 +178,6 @@ while not done:
     step_rewards.append(reward)
     mean_reward = np.mean(step_rewards)
     mean_rew.append(mean_reward)
-    test_print = f'Step: {info["current_step"]} / {env.total_steps - 1} |Action taken: {ue_select} | Step Reward: {reward} | Mean Reward: {mean_reward:.3f} | Score: {score:.3f}'
+    test_print = f'Step: {info["current_step"]} / {env.total_step - 1} |Action taken: {ue_select} | Step Reward: {reward} | Mean Reward: {mean_reward:.3f} | Score: {score:.3f}'
     print(test_print, end='\r')        
     observation = next_obs

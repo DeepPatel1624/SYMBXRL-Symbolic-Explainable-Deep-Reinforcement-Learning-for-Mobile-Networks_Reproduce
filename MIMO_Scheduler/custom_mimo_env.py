@@ -40,7 +40,7 @@ class MimoEnv(gym.Env):
         self.num_ue = H.shape[2]
         self.current_step = 0
         self.total_step = H.shape[0]
-        ue_history = np.zeros((H.shape(2),))
+        ue_history = np.zeros((H.shape[2],))
         self.obs_sate = []
         self.usrgrp_cntr = []
         action_space_size = 127 #2^7 --> [0,126] INCLUSIVE
@@ -51,7 +51,7 @@ class MimoEnv(gym.Env):
         #Maximum values for the state variables
         high = np.array([np.inf, np.inf, 6]*7)
 
-        self.observation_space = gym.spaces.Box(low = np.array(low), high = np.array(high), dttype= np.float64)
+        self.observation_space = gym.spaces.Box(low = np.array(low), high = np.array(high), dtype= np.float64)
 
         self.total_reward = None
         self.history = None
@@ -67,12 +67,12 @@ class MimoEnv(gym.Env):
             dict: Information about the environment
         """
 
-        self.currunt_step = 0
+        self.current_step = 0
         self.total_reward = 0
         self.history = {}
         self.jfi = 0
         self.sys_se = 0
-        group_idx = user_group(np.squeeze(self.H[self.currunt_step,:,:]))
+        group_idx = usr_group(np.squeeze(self.H[self.current_step,:,:]))
         self.usrgrp_cntr.append(group_idx)
         self.ue_history = np.zeros((7,))
         initial_state = np.concatenate((np.reshape(self.se_max[self.current_step,:],(1,self.num_ue)),np.reshape(self.ue_history,(1,self.num_ue)),np.reshape(group_idx,(1,-1))),axis = 1)
@@ -149,19 +149,41 @@ class MimoEnv(gym.Env):
         self.jfi = jfi 
         self.sys_se = sys_se
         self.total_reward = self.total_reward + reward
-        
-        self.currunt_step += 1
-        done_pm = self.total_step - 1
-        done = self.currunt_step >= self.total_step
+        self.current_step += 1
+        done = self.current_step >= self.total_step
         truncated = False
 
-        #getting group index
-        group_idx = usr_group(np.squeeze(self.H[(self.currunt_step),:,:]))
+        # If episode finished, don't access next state
+        if done:
+            info = self.getinfo()
+            return self.obs_sate[-1], reward, True, truncated, info
+
+        # Safe to compute next state
+        group_idx = usr_group(np.squeeze(self.H[self.current_step,:,:]))
         self.usrgrp_cntr.append(group_idx)
 
-        #7)8) next state difinaton
-        next_state = np.concatenate((np.reshape(self.se_max[(self.current_step),:],(1,self.num_ue)),np.reshape(self.ue_history,(1,self.num_ue)),np.reshape(group_idx,(1,-1))),axis = 1)
-        self.obs_state.append(next_state)       
+        next_state = np.concatenate(
+            (
+                np.reshape(self.se_max[self.current_step,:],(1,self.num_ue)),
+                np.reshape(self.ue_history,(1,self.num_ue)),
+                np.reshape(group_idx,(1,-1))
+            ),
+            axis=1
+        )
+
+        self.obs_sate.append(next_state)
+        # self.current_step += 1
+        # done_pm = self.total_step - 1
+        # done = self.current_step >= self.total_step
+        # truncated = False
+
+        # #getting group index
+        # group_idx = usr_group(np.squeeze(self.H[(self.current_step),:,:]))
+        # self.usrgrp_cntr.append(group_idx)
+
+        # #7)8) next state difinaton
+        # next_state = np.concatenate((np.reshape(self.se_max[(self.current_step),:],(1,self.num_ue)),np.reshape(self.ue_history,(1,self.num_ue)),np.reshape(group_idx,(1,-1))),axis = 1)
+        self.obs_sate.append(next_state)       
 
         info = self.getinfo()
         history = self.update_history(info)   
@@ -259,7 +281,7 @@ class MimoEnv(gym.Env):
           Returns:
                 dict: Information about the environment.
         """
-        return dict(current_step = self.current_step , NSSE = self.sys_se , JFI = self.jsi)
+        return dict(current_step = self.current_step , NSSE = self.sys_se , JFI = self.jfi)
 
 
     def update_history(self,info):
