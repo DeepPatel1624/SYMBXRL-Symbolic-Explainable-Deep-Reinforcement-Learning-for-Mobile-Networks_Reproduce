@@ -137,9 +137,9 @@ seconds = int(training_time) % 60
 print(f"Training time: {hours} hours, {minutes} minutes, {seconds} seconds")
 
 # # Save the final model
-# final_model_path = f"models/SACG_{score[i_episode]:.2f}_{i_episode + 1}_dtLOS_HS2_final.pth"
-# agent.save_checkpoint(final_model_path)
-# print("Final model saved successfully.")
+final_model_path = f"models/SACG_{score[i_episode]:.2f}_{i_episode + 1}_dtLOS_HS2_final.pth"
+agent.save_checkpoint(final_model_path)
+print("Final model saved successfully.")
 
 #Evaluate the model
 print("###############################################################EVALUATION STARTS ############################################################################################################")

@@ -149,10 +149,12 @@ seconds = int(training_time) % 60
 
 print(f"Training time: {hours} hours, {minutes} minutes, {seconds} seconds")
 
-# # Save the final model
-# final_model_path = f"models/SACG_{score[i_episode]:.2f}_{i_episode + 1}_dtLOS_HS2_final.pth"
-# agent.save_checkpoint(final_model_path)
-# print("Final model saved successfully.")
+# Save the final model
+final_model_path = f"/Users/deep/Desktop/MICxN/Projects/SYMBXRL-Symbolic-Explainable-Deep-Reinforcement-Learning-for-Mobile-Networks_Reproduce/MIMO_Scheduler/SAC/models/sac_checkpoint_models/SACG_{score[i_episode]:.2f}_{i_episode + 1}_dtLOS_HS2_final.pth"
+os.makedirs(os.path.dirname(final_model_path), exist_ok=True)
+agent.save_checkpoint(env_name="mimo", ckpt_path=final_model_path)
+print(f"Final model saved successfully to {final_model_path}")
+
 
 # ======================== Evaluation ========================
 print("###############################################################EVALUATION STARTS ############################################################################################################")
