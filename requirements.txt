@@ -1,0 +1,7 @@
+gymnasium
+h5py
+matplotlib
+numpy
+pandas
+plotly
+torch
