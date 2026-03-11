@@ -1,1 +1,0 @@
-PROJ_ADDR = '/Users/deep/Desktop/MICxN/Projects/SYMBXRL-Symbolic-Explainable-Deep-Reinforcement-Learning-for-Mobile-Networks_Reproduce/MIMO_Scheduler'

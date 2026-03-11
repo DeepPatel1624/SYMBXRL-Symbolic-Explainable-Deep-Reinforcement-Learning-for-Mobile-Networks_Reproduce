@@ -1,1 +1,2 @@
-PROJ_ADDR = '/Users/deep/Desktop/MICxN/Projects/SYMBXRL-Symbolic-Explainable-Deep-Reinforcement-Learning-for-Mobile-Networks_Reproduce/MIMO_Scheduler'
+import os
+PROJ_ADDR = os.path.dirname(os.path.abspath(__file__))
